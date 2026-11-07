@@ -112,7 +112,7 @@ class Ctrl : public ITrackedDeviceServerDriver {
     VRProperties()->SetStringProperty(c, Prop_ModelNumber_String, hand ? "Oculus Quest Controller (Right)" : "Oculus Quest Controller (Left)");
     VRProperties()->SetStringProperty(c, Prop_ControllerType_String, "oculus_touch");
     VRProperties()->SetStringProperty(c, Prop_InputProfilePath_String, "{oculus}/input/touch_profile.json");
-    VRProperties()->SetStringProperty(c, Prop_RenderModelName_String, hand ? "oculus_rifts_controller_right" : "oculus_rifts_controller_left");
+    VRProperties()->SetStringProperty(c, Prop_RenderModelName_String, "vr_controller_vive_1_5");
     VRProperties()->SetInt32Property(c, Prop_ControllerRoleHint_Int32, hand ? TrackedControllerRole_RightHand : TrackedControllerRole_LeftHand);
     auto in = VRDriverInput();
     in->CreateBooleanComponent(c, hand ? "/input/a/click" : "/input/x/click", &b1);
