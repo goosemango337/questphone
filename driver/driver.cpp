@@ -1,7 +1,8 @@
 // QuestPhone SteamVR driver: virtual HMD + left/right controllers.
-// Pose/input arrive as 52-byte UDP packets on 127.0.0.1:5601 from bridge.py.
+// Pose/input arrive as 60-byte UDP packets on 127.0.0.1:5601 from bridge.py.
 #include "openvr_driver.h"
 #include <atomic>
+#include <cmath>
 #include <cstring>
 #include <thread>
 #ifdef _WIN32
@@ -19,10 +20,10 @@ typedef int sock_t;
 using namespace vr;
 
 #pragma pack(push, 1)
-struct State { float q[4]; float ls[2], rs[2]; float trig[2]; float grip[2]; uint32_t buttons; };
+struct State { float q[4]; float ls[2], rs[2]; float trig[2]; float grip[2]; uint32_t buttons; float aim[2]; };
 #pragma pack(pop)
-// buttons: 1=A 2=B 4=X 8=Y 16=Menu 32=System
-static State g_state = {{0, 0, 0, 1}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, 0};
+// buttons: 1=A 2=B 4=X 8=Y 16=Menu 32=System; aim = controller yaw/pitch (radians)
+static State g_state = {{0, 0, 0, 1}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, 0, {0, 0}};
 static std::atomic<bool> g_run{false};
 
 static void rot(const float* q, const float* v, float* o) {
@@ -104,26 +105,27 @@ class Ctrl : public ITrackedDeviceServerDriver {
   int hand;  // 0 left, 1 right
   uint32_t id = k_unTrackedDeviceIndexInvalid;
   DriverPose_t pose{};
-  VRInputComponentHandle_t b1{}, b2{}, b3{}, trig{}, trigC{}, grip{}, sx{}, sy{}, sc{};
+  VRInputComponentHandle_t sys{}, menu{}, gripC{}, trig{}, trigC{}, tpx{}, tpy{}, tpC{}, tpT{};
   explicit Ctrl(int h) : hand(h) {}
   EVRInitError Activate(uint32_t i) override {
     id = i;
     auto c = VRProperties()->TrackedDeviceToPropertyContainer(i);
-    VRProperties()->SetStringProperty(c, Prop_ModelNumber_String, hand ? "Oculus Quest Controller (Right)" : "Oculus Quest Controller (Left)");
-    VRProperties()->SetStringProperty(c, Prop_ControllerType_String, "oculus_touch");
-    VRProperties()->SetStringProperty(c, Prop_InputProfilePath_String, "{oculus}/input/touch_profile.json");
+    // Emulates a Vive wand: SteamVR ships bindings for it, so the dashboard and most games work.
+    VRProperties()->SetStringProperty(c, Prop_ModelNumber_String, "Vive Controller MV");
+    VRProperties()->SetStringProperty(c, Prop_ControllerType_String, "vive_controller");
+    VRProperties()->SetStringProperty(c, Prop_InputProfilePath_String, "{htc}/input/vive_controller_profile.json");
     VRProperties()->SetStringProperty(c, Prop_RenderModelName_String, "vr_controller_vive_1_5");
     VRProperties()->SetInt32Property(c, Prop_ControllerRoleHint_Int32, hand ? TrackedControllerRole_RightHand : TrackedControllerRole_LeftHand);
     auto in = VRDriverInput();
-    in->CreateBooleanComponent(c, hand ? "/input/a/click" : "/input/x/click", &b1);
-    in->CreateBooleanComponent(c, hand ? "/input/b/click" : "/input/y/click", &b2);
-    in->CreateBooleanComponent(c, hand ? "/input/system/click" : "/input/menu/click", &b3);
+    in->CreateBooleanComponent(c, "/input/system/click", &sys);
+    in->CreateBooleanComponent(c, "/input/application_menu/click", &menu);
+    in->CreateBooleanComponent(c, "/input/grip/click", &gripC);
     in->CreateScalarComponent(c, "/input/trigger/value", &trig, VRScalarType_Absolute, VRScalarUnits_NormalizedOneSided);
     in->CreateBooleanComponent(c, "/input/trigger/click", &trigC);
-    in->CreateScalarComponent(c, "/input/grip/value", &grip, VRScalarType_Absolute, VRScalarUnits_NormalizedOneSided);
-    in->CreateScalarComponent(c, "/input/thumbstick/x", &sx, VRScalarType_Absolute, VRScalarUnits_NormalizedTwoSided);
-    in->CreateScalarComponent(c, "/input/thumbstick/y", &sy, VRScalarType_Absolute, VRScalarUnits_NormalizedTwoSided);
-    in->CreateBooleanComponent(c, "/input/thumbstick/click", &sc);
+    in->CreateScalarComponent(c, "/input/trackpad/x", &tpx, VRScalarType_Absolute, VRScalarUnits_NormalizedTwoSided);
+    in->CreateScalarComponent(c, "/input/trackpad/y", &tpy, VRScalarType_Absolute, VRScalarUnits_NormalizedTwoSided);
+    in->CreateBooleanComponent(c, "/input/trackpad/click", &tpC);
+    in->CreateBooleanComponent(c, "/input/trackpad/touch", &tpT);
     return VRInitError_None;
   }
   void Deactivate() override { id = k_unTrackedDeviceIndexInvalid; }
@@ -133,19 +135,22 @@ class Ctrl : public ITrackedDeviceServerDriver {
   DriverPose_t GetPose() override { return pose; }
   void Push(const State& s) {
     if (id == k_unTrackedDeviceIndexInvalid) return;
-    float off[3] = {hand ? 0.18f : -0.18f, -0.35f, -0.3f}, o[3], p[3];
-    rot(s.q, off, o);
-    for (int i = 0; i < 3; i++) p[i] = HEAD[i] + o[i];
-    pose = makePose(s.q, p);
+    // Controllers hover in front of you and do NOT follow your head; aim comes from the phone's aim-drag.
+    float sy = sinf(s.aim[0] / 2), cy = cosf(s.aim[0] / 2), sx = sinf(s.aim[1] / 2), cx = cosf(s.aim[1] / 2);
+    float q[4] = {cy * sx, sy * cx, -sy * sx, cy * cx};
+    float p[3] = {HEAD[0] + (hand ? 0.2f : -0.2f), HEAD[1] - 0.4f, HEAD[2] - 0.4f};
+    pose = makePose(q, p);
     auto in = VRDriverInput();
-    in->UpdateBooleanComponent(b1, s.buttons & (hand ? 1 : 4), 0);
-    in->UpdateBooleanComponent(b2, s.buttons & (hand ? 2 : 8), 0);
-    in->UpdateBooleanComponent(b3, s.buttons & (hand ? 32 : 16), 0);
+    float sx2 = hand ? s.rs[0] : s.ls[0], sy2 = hand ? s.rs[1] : s.ls[1];
+    in->UpdateBooleanComponent(sys, s.buttons & (hand ? 32 : 16), 0);
+    in->UpdateBooleanComponent(menu, s.buttons & (hand ? 2 : 8), 0);
+    in->UpdateBooleanComponent(gripC, s.grip[hand] > 0.5f, 0);
     in->UpdateScalarComponent(trig, s.trig[hand], 0);
     in->UpdateBooleanComponent(trigC, s.trig[hand] > 0.7f, 0);
-    in->UpdateScalarComponent(grip, s.grip[hand], 0);
-    in->UpdateScalarComponent(sx, hand ? s.rs[0] : s.ls[0], 0);
-    in->UpdateScalarComponent(sy, hand ? s.rs[1] : s.ls[1], 0);
+    in->UpdateScalarComponent(tpx, sx2, 0);
+    in->UpdateScalarComponent(tpy, sy2, 0);
+    in->UpdateBooleanComponent(tpC, s.buttons & (hand ? 1 : 4), 0);
+    in->UpdateBooleanComponent(tpT, fabsf(sx2) + fabsf(sy2) > 0.1f || (s.buttons & (hand ? 1 : 4)), 0);
     VRServerDriverHost()->TrackedDevicePoseUpdated(id, pose, sizeof(DriverPose_t));
   }
 };
