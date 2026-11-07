@@ -5,6 +5,8 @@ final class Controls: ObservableObject {
     @Published var rs = SIMD2<Float>(0, 0)
     var lt: Float = 0, rt: Float = 0, lg: Float = 0, rg: Float = 0
     var buttons: UInt32 = 0  // 1=A 2=B 4=X 8=Y 16=Menu 32=System
+    var aimYaw: Float = 0, aimPitch: Float = 0
+    var last = CGSize.zero
     func set(_ bit: UInt32, _ on: Bool) { buttons = on ? buttons | bit : buttons & ~bit }
 }
 
@@ -17,17 +19,24 @@ struct VRView: View {
 
     var body: some View {
         ZStack {
-            Color.black
+            Color.black.contentShape(Rectangle())
+                .gesture(DragGesture(minimumDistance: 0)
+                    .onChanged { g in
+                        c.aimYaw -= Float(g.translation.width - c.last.width) * 0.004
+                        c.aimPitch = max(-1.2, min(1.2, c.aimPitch - Float(g.translation.height - c.last.height) * 0.004))
+                        c.last = g.translation
+                    }
+                    .onEnded { _ in c.last = .zero })
             if let img = link.frame {
-                Image(uiImage: img).resizable().scaledToFill()
+                Image(uiImage: img).resizable().scaledToFill().allowsHitTesting(false)
             } else {
                 Text(link.connected ? "Start SteamVR on your PC" : "Waiting for PC (run bridge.py)")
-                    .foregroundColor(.gray)
+                    .foregroundColor(.gray).allowsHitTesting(false)
             }
             VStack {
                 HStack {
                     Pad("Menu") { c.set(16, $0) }
-                    Pad("Center") { if $0 { head.recenter() } }
+                    Pad("Center") { if $0 { head.recenter(); c.aimYaw = 0; c.aimPitch = 0 } }
                     Pad("Sys") { c.set(32, $0) }
                 }
                 Spacer()
@@ -55,10 +64,13 @@ struct VRView: View {
     private func packet() -> Data {
         let q = head.q.vector
         var f: [Float] = [q.x, q.y, q.z, q.w, c.ls.x, c.ls.y, c.rs.x, c.rs.y, c.lt, c.rt, c.lg, c.rg]
+        // buttons then aim (below)
         var d = f.withUnsafeMutableBytes { Data($0) }
         var b = c.buttons
         d.append(Data(bytes: &b, count: 4))
-        return d  // 52 bytes
+        var aim: [Float] = [c.aimYaw, c.aimPitch]
+        d.append(aim.withUnsafeMutableBytes { Data($0) })
+        return d  // 60 bytes
     }
 }
 
