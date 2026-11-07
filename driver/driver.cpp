@@ -62,6 +62,7 @@ class Hmd : public ITrackedDeviceServerDriver, public IVRDisplayComponent {
     VRProperties()->SetFloatProperty(c, Prop_DisplayFrequency_Float, 60.f);
     VRProperties()->SetFloatProperty(c, Prop_SecondsFromVsyncToPhotons_Float, 0.011f);
     VRProperties()->SetBoolProperty(c, Prop_IsOnDesktop_Bool, true);
+    VRProperties()->SetBoolProperty(c, Prop_DisplayDebugMode_Bool, true);
     return VRInitError_None;
   }
   void Deactivate() override { id = k_unTrackedDeviceIndexInvalid; }
@@ -76,14 +77,14 @@ class Hmd : public ITrackedDeviceServerDriver, public IVRDisplayComponent {
     if (id != k_unTrackedDeviceIndexInvalid)
       VRServerDriverHost()->TrackedDevicePoseUpdated(id, GetPose(), sizeof(DriverPose_t));
   }
-  // The compositor draws into a 1920x888 desktop window (top-left of the main monitor).
+  // The compositor draws into a 1920x1080 desktop window (top-left of the main monitor).
   // bridge.py captures that region and streams it to the phone as a side-by-side image.
-  void GetWindowBounds(int32_t* x, int32_t* y, uint32_t* w, uint32_t* h) override { *x = 0; *y = 0; *w = 1920; *h = 888; }
+  void GetWindowBounds(int32_t* x, int32_t* y, uint32_t* w, uint32_t* h) override { *x = 0; *y = 0; *w = 1920; *h = 1080; }
   bool IsDisplayOnDesktop() override { return true; }
   bool IsDisplayRealDisplay() override { return false; }
   void GetRecommendedRenderTargetSize(uint32_t* w, uint32_t* h) override { *w = 1440; *h = 1440; }
   void GetEyeOutputViewport(EVREye e, uint32_t* x, uint32_t* y, uint32_t* w, uint32_t* h) override {
-    *x = e == Eye_Left ? 0 : 960; *y = 0; *w = 960; *h = 888;
+    *x = e == Eye_Left ? 0 : 960; *y = 0; *w = 960; *h = 1080;
   }
   void GetProjectionRaw(EVREye, float* l, float* r, float* t, float* b) override { *l = -1; *r = 1; *t = -1; *b = 1; }
   DistortionCoordinates_t ComputeDistortion(EVREye, float u, float v) override {
