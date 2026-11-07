@@ -1,0 +1,31 @@
+name: build
+on: [push, workflow_dispatch]
+jobs:
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - name: Build unsigned IPA
+        run: |
+          cd ios
+          xcodegen
+          xcodebuild -project QuestPhone.xcodeproj -scheme QuestPhone -configuration Release -sdk iphoneos -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY=""
+          mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/QuestPhone.app Payload/
+          zip -r QuestPhone.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: QuestPhone-ipa
+          path: ios/QuestPhone.ipa
+  driver:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          cmake -S driver -B build -A x64
+          cmake --build build --config Release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: driver_questphone-dll
+          path: build/Release/driver_questphone.dll
