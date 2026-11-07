@@ -1,0 +1,3 @@
+dxcam
+opencv-python
+numpy

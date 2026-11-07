@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.15)
+project(driver_questphone CXX)
+set(CMAKE_CXX_STANDARD 17)
+add_library(driver_questphone SHARED driver.cpp)
+if(WIN32)
+  target_link_libraries(driver_questphone ws2_32)
+endif()

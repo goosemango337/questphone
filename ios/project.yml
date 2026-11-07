@@ -1,0 +1,22 @@
+name: QuestPhone
+options:
+  bundleIdPrefix: com.questphone
+targets:
+  QuestPhone:
+    type: application
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources: [QuestPhone]
+    info:
+      path: QuestPhone/Info.plist
+      properties:
+        UILaunchScreen: {}
+        UIRequiresFullScreen: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        NSMotionUsageDescription: Head tracking for VR
+        NSLocalNetworkUsageDescription: Connects to your PC
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.questphone.app
+        SWIFT_VERSION: "5.0"
+        CODE_SIGNING_ALLOWED: "NO"
